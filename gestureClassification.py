@@ -10,6 +10,13 @@ import csv
 import numpy as np
 from sklearn.svm import SVC
 from sklearn.multiclass import OneVsRestClassifier
+#from sklearn.ensemble import BaggingClassifier, RandomForestClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.cross_validation import train_test_split
+from sklearn import preprocessing
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.mixture import GMM
 
 dataPath = "/u5/amwytsma/Documents/ThalmicChallenge/GestureData/"
 
@@ -27,11 +34,13 @@ for fileLine in fileReader:
 
 openFile.close()
 
+gestures = set()
 classData = np.zeros(numFiles)
 featureData = np.zeros((numFiles, numTimeSamps, numChnls))
 
 for fileNum in range(numFiles):
     classData[fileNum] = int(fileNms[fileNum][7:fileNms[fileNum].index('_')])
+    gestures.add(classData[fileNum])
     
     openFile = open(dataPath + fileNms[fileNum], 'r')
     fileReader = csv.reader(openFile, delimiter = ',')
@@ -44,6 +53,9 @@ for fileNum in range(numFiles):
     
     openFile.close()
 
+numGestures = len(gestures)
+
+#Normalize???
 featureData = featureData.astype(int)
 
 featureMeans = np.mean(featureData, axis = 1)
@@ -57,16 +69,44 @@ featureMidVars = np.var(featureData[:, int(numTimeSamps/3):int(2*numTimeSamps/3)
 featureLateVars = np.var(featureData[:, int(2*numTimeSamps/3):numTimeSamps, :], axis = 1)
 
 #Also covariance???
-#Normalize???
 
-generatedFeatures = np.hstack((featureMeans, featureVars))
+finalFeatures = np.hstack((featureEarlyMeans, featureMidMeans, featureLateMeans, featureEarlyVars, featureMidVars, featureLateVars))
 
-classif = OneVsRestClassifier(SVC(kernel='linear'))
-#classif.fit(X, Y)
+featuresTrain = np.zeros((0, np.shape(finalFeatures)[1]))
+featuresTest = np.zeros((0, np.shape(finalFeatures)[1]))
+classTrain = np.zeros(0)
+classTest = np.zeros(0)
 
-"""
-for gestureNum in range(1, 7):
-    gestureObs = featureData[classData == gestureNum]
-    
-    print np.mean(gestureObs, axis = (0, 1))
-"""
+for gestureNum in gestures:
+    featuresTrainGest, featuresTestGest, classTrainGest, classTestGest = train_test_split(finalFeatures[classData == gestureNum, :], classData[classData == gestureNum], test_size=0.2)
+    featuresTrain = np.vstack((featuresTrain, featuresTrainGest))
+    featuresTest = np.vstack((featuresTest, featuresTestGest))
+    classTrain = np.hstack((classTrain, classTrainGest))
+    classTest = np.hstack((classTest, classTestGest))
+
+#Randomize order of observations!!
+#More preprocessing??
+min_max_scaler = preprocessing.MinMaxScaler()
+featuresTrain = min_max_scaler.fit_transform(featuresTrain)
+featuresTest = min_max_scaler.transform(featuresTest)
+
+#classSVM = OneVsRestClassifier(SVC(kernel='linear'))
+#classSVM.fit(featuresTrain, classTrain)
+
+#classDT = RandomForestClassifier(min_samples_leaf=5)
+#classDT.fit(featuresTrain, classTrain)
+#classDT.score(featuresTest, classTest)
+
+#classKNN = KNeighborsClassifier(n_neighbors=3)
+#classKNN.fit(featuresTrain, classTrain)
+#classKNN.score(featuresTest, classTest)
+
+#classLogReg = LogisticRegression()#penalty='newton-cg', dual=False)#, solver='liblinear')
+#classLogReg.fit(featuresTrain, classTrain)
+#classLogReg.score(featuresTest, classTest)
+
+classGMM = GMM(n_components=numGestures, covariance_type='tied', init_params='wc', n_iter=100)
+classGMM.means_ = np.array([featuresTrain[classTrain == i].mean(axis=0) for i in gestures])
+classGMM.fit(featuresTrain)
+#classGMM.fit(featuresTrain, classTrain)
+#print classGMM.score(featuresTest, classTest)
